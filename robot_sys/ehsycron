@@ -1,0 +1,1 @@
+30 13 * * * source /root/.bash_profile;cd /home/Collection/robot_sys/;python -u run.py 7 > /tmp/20170329.log 

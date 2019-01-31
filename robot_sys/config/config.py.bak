@@ -1,0 +1,168 @@
+from . import ua
+import pymysql
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import INTEGER, String, Enum, Column,func,Numeric,or_
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects.mysql import INTEGER
+import redis 
+from selenium import webdriver
+import random
+import time
+import json
+import requests
+from pyvirtualdisplay import Display
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from bs4 import BeautifulSoup
+
+'''
+配置 redis 和 mysql 地址
+'''
+#r = redis.Redis(host="103.214.170.104",port=2799,db=0,password="52i38jblmy6H%1!s118")
+r = redis.Redis(host="127.0.0.1",port=6379,db=0,password="")
+# 初始化数据库连接:
+#db_url = "mysql+pymysql://yishidong023:yishidong023@101.201.121.245:3306/parity?charset=utf8"
+#db_url = "mysql+pymysql://root:vps_tj@127.0.0.1:3306/parity?charset=utf8"
+db_url = "mysql+pymysql://root:echap@127.0.0.1:3306/parity?charset=utf8"
+
+'''
+配置商城全局变量
+'''
+#西域
+ehsy_name = "西域"
+ehsy_host = "http://www.ehsy.com"
+ehsy_brand_url = "http://www.ehsy.com/brand/list"
+ehsy_telephone = "400-821-8800 400-885-8833"
+ehsy_site_type = 0
+ehsy_logo_path = "ehsy/ehsy_logo.png"
+ehsy_str = ['国产']
+EHSY_ID = 1
+
+#工品汇
+vipmro_name = "工品汇"
+vipmro_host = "http://vipmro.com/"
+vipmro_brand_url = "http://www.vipmro.com/brand/"
+vipmro_telephone = "400-049-6999"
+vipmro_site_type = 1
+vipmro_logo_path = "vipmro/vipmro_logo.jpg"
+VIPMRO_ID = 2
+vipmro_str = ['电机','电气','电缆']
+
+#得捷电子
+digikey_name = "得捷电子"
+digikey_host = "http://www.digikey.com.cn"
+digikey_telephone = "400 882 4440"
+digikey_site_type = 1
+digikey_logo_path = "digikey/digikey_logo.png"
+DIGIKEY_ID = 3
+digikey_category = "http://www.digikey.com.cn/search/zh?site=cn&lang=zh"
+
+DEBUG_LEVEL = 0
+
+#配置代理服务器认证
+PROXY_USER = 'zrx70'
+PROXY_PASSWD = '61197'
+PROXY_IP = '222.184.35.196'
+PROXY_PORT = '33180'
+def open_driver(mode,ipproxy=0):
+    if mode == 1:
+        driver = requests.session()
+    elif mode == 0:
+        dcap = dict(DesiredCapabilities.PHANTOMJS)
+        
+        dcap["phantomjs.page.settings.userAgent"] = (ua.ua_list[random.randint(0, len(ua.ua_list)-1)])
+        if ipproxy == 1:
+            rsp = requests.get("http://127.0.0.1:8000/select?name=vipmro&anonymity=2&order=speed&count=20") 
+            json_list = str(rsp.content,encoding='utf-8')
+            ip_list = json.loads(json_list)
+            ip_proxy  = ip_list[random.randint(0,len(ip_list))-1]
+            ip = ip_proxy.get('ip')
+            port = ip_proxy.get('port')
+            __proxy = '--proxy=' + ip + ':' + str(port)
+            service_args = [ __proxy,
+                            '--proxy-type=http',
+                            '--ignore-ssl-errors=true',
+                            '--load-images=no',
+                            '--disk-cache=yes']
+            driver = webdriver.PhantomJS('/usr/local/bin/phantomjs',service_args=service_args,desired_capabilities=dcap)
+            driver.set_page_load_timeout(10)
+        elif ipproxy == 2:
+            _proxy = "--proxy=%s:%s" % (PROXY_IP,PROXY_PORT)
+            _proxy_auth = "--proxy-auth=%s:%s" % (PROXY_USER,PROXY_PASSWD)
+            service_args = [ _proxy,
+                             _proxy_auth,
+                            '--proxy-type=socks5',
+                            '--ignore-ssl-errors=true',
+                            '--load-images=no',
+                            '--disk-cache=yes']
+            driver = webdriver.PhantomJS('/usr/local/bin/phantomjs',service_args=service_args,desired_capabilities=dcap)
+            driver.set_page_load_timeout(10)
+        else:
+            driver = webdriver.PhantomJS('/usr/local/bin/phantomjs',desired_capabilities=dcap)
+
+    return driver
+
+def close_driver(driver,mode):
+    if mode == 0:
+        driver.quit()
+
+def http_get(url,driver,mode,time_out=None):
+    #print("process:%s "% url)
+    if mode == 1:
+        headers = ua.get_ua(url)
+        #print(headers)
+        try:
+            if time_out:
+                rsp = driver.get(url,headers=headers,timeout=time_out)
+            else:
+                rsp = driver.get(url,headers=headers)
+            return rsp.content
+        except Exception as e:
+            print("error http_get %s %s" % (url,e))
+            return None
+    elif mode == 0:
+        try:
+            if time_out:
+                driver.set_page_load_timeout(time_out)
+            driver.get(url)
+            html = driver.page_source
+            return html
+        except Exception as e:
+            print("error http_get %s" % e)
+            html = driver.page_source
+            return html
+
+def test_ip():
+    try:
+        ipproxy = 2
+        url = "http://vipmro.com/product/569431"
+        driver = open_driver(0,ipproxy=ipproxy)
+        driver.get(url)
+        html = driver.page_source
+        time.sleep(3)
+        soup = BeautifulSoup(html, 'html.parser')
+        if '施耐德' in soup.title.text:
+            close_driver(driver,0)
+            return True
+        else:
+            close_driver(driver,0)
+            return False
+    except Exception as e:
+        close_driver(driver,0)
+        return False
+
+def switch_ip():
+    time_ = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
+    url = "http://ip.hahado.cn/simple/current-ip?username=%s&password=%s" \
+        % (PROXY_USER,PROXY_PASSWD)
+    rsp = requests.get(url,timeout=10) 
+    print("switch ip:%s %s" % (time_,rsp.content))
+    time.sleep(20)
+    while True:
+        if test_ip():
+            break
